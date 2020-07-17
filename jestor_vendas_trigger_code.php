@@ -11,6 +11,87 @@ $crWithVendas = Jestor.loadData("contas_a_receber_cr", array(
 ));
 if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
     if ($objectNew['status'] == "Fechado") {
+
+// ------------------  customer id
+        $customerRequestURL = "https://sandbox.asaas.com/api/v3/customers";
+        $paymentRequestURL = "https://sandbox.asaas.com/api/v3/payments";
+        $accessToken = "7711338deff452aab3195adc68e184baa198fa9f0320ce576cff1691f93644fe";
+        $clienteVinculado = $objectNew['cliente'];
+        $clienteArray = Jestor.loadData("cliente", array(
+        'where' => array(
+            'id_cliente' => $clienteVinculado),
+        'limit' => 1));
+        $asaasId = $clienteArray[0]['id_do_cliente'];
+        $customerName = $clienteArray[0]['name'];
+        $customerEmail = $clienteArray[0]['email_principal'];
+        $customerPhone = $clienteArray[0]['telefone_comercial'];
+        $customerMobile = $clienteArray[0]['telefone_celular'];
+        $customerCEP = $clienteArray[0]['cep'];
+        $customerAddress = $clienteArray[0]['endereco'];
+        $customerNumero = $clienteArray[0]['numero'];
+        $customerComplement = $clienteArray[0]['complemento'];
+        $customerNeighborhood = $clienteArray[0]['bairro'];
+        $jestorCustomerId = $clienteArray[0]['id_cliente'];
+        $municipalInscription = $clienteArray[0]['inscricao_municipal'];
+        $stateInscription = $clienteArray[0]['inscricao_estadual'];
+        $customerCnpjCpf = $clienteArray[0]['cnpj_cpf']; 
+        if ($asaasId == null) {
+        $customerJson = Jestor.curlCall("$customerRequestURL?cpfCnpj=$customerCnpjCpf", array( // GET - check if they have it
+            CURLOPT_RETURNTRANSFER => 1,
+            CURLOPT_HEADER => 0,
+            CURLOPT_HTTPHEADER => array(
+                "access_token: $accessToken")
+        ));
+        $customerDecodedJson = json_decode($customerJson, true);
+        if ($customerDecodedJson['totalCount'] > 0) {
+            $asaasId = $customerDecodedJson['data'][0]['id'];
+            if ($asaasId != null) {
+                Jestor.update("cliente", array(
+                    'id_cliente' => $clienteArray[0]['id_cliente'],
+                    'id_do_cliente' => $asaasId
+                ));
+            }
+        }
+        }
+        if ($asaasId == null) { // POST - create if they don't
+            $json = Jestor.curlCall($customerRequestURL, array( 
+                    CURLOPT_RETURNTRANSFER => 1,
+                    CURLOPT_HEADER => 0,
+                    CURLOPT_POST => 1,
+                    CURLOPT_HTTPHEADER => array(
+                        "Content-Type: application/json", 
+                        "access_token: $accessToken"),
+                    CURLOPT_POSTFIELDS => "{
+                            \"name\": \"$customerName\",
+                            \"email\": \"$customerEmail\",
+                            \"phone\": \"$customerPhone\",
+                            \"mobilePhone\": \"$customerMobile\",
+                            \"cpfCnpj\": \"$customerCnpjCpf\",
+                            \"postalCode\": \"$customerCEP\",
+                            \"address\": \"$customerAddress\",
+                            \"addressNumber\": \"$customerNumero\",
+                            \"complement\": \"$customerComplement\",
+                            \"province\": \"$customerNeighborhood\",
+                            \"externalReference\": \"$jestorCustomerId\",
+                            \"notificationDisabled\": true,
+                            \"municipalInscription\": \"$municipalInscription\",
+                            \"stateInscription\": \"$stateInscription\"
+                        }"));
+            $jsonArray = json_decode($json, true);
+            $asaasId = $jsonArray['id'];
+            if ($asaasId != null) {
+                Jestor.update("cliente", array(
+                    'id_cliente' => $clienteArray[0]['id_cliente'],
+                    'id_do_cliente' => $asaasId
+                ));
+            } else {
+                $errorMessage = $jsonArray['errors'][0]['description'];
+                Jestor.error("Erro ao criar registro do cliente com Asaas, erro: $errorMessage");
+            }
+        }
+
+// ends -------- customer id
+
         $contaObject = Jestor.loadData('contas_de_bancos', array(
             'where' => array(
                 'name' => "Michigan Comercio")));
@@ -23,90 +104,26 @@ if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
                 $orcamentoFechado = $listaOrcamentosVinculados[$i];
                 $orcamentoName = $orcamentoFechado['name'];
                 $valorOrcamento = $orcamentoFechado['valor_do_orcamento'];
-                $formaPagamento = $orcamentoFechado['forma_de_pagamento'];
-                $prazoPagamento = $orcamentoFechado['prazo_de_pagamento'];
                 $iss = $orcamentoFechado['iss'];
                 $isv = $orcamentoFechado['isv'];
                 $icms = $orcamentoFechado['icms'];
                 $ipi = $orcamentoFechado['ipi'];
                 $somaAliquotasImpostos = $iss + $isv + $icms + $ipi;
-                $tempoCompensacao = 1;
-                switch ($formaPagamento) {
-                    case 'Boleto':
-                        $tempoCompensacao = 1;
-                        break;
-                    case 'Transferência Bancária':
-                        $tempoCompensacao = 1;
-                        break;
-                    case 'Cartão de Crédito':
-                        $tempoCompensacao = 14;
-                        break;
-                    case 'Cartão de Débito':
-                        $tempoCompensacao = 14;
-                        break;
-                    case 'Cf. Contrato':
-                        $tempoCompensacao = 3;
-                        break;
-                    case 'Cheque':
-                        $tempoCompensacao = 30;
-                        break;
-                    case 'Dinheiro':
-                        $tempoCompensacao = 1;
-                        break;
-                    case 'Permuta':
-                        $tempoCompensacao = 30;
-                        break;
-                    default:
-                        $tempoCompensacao = 3;
-                        break;
-                }
-                $intervaloPagamento = 0;
-                $totalParcelas = 1;
-                switch ($prazoPagamento) {
-                    case '5 dias':
-                        $totalParcelas = 1;
-                        $primeiroPagamento = 5;
-                        break;
-                    case '30 dias':
-                        $totalParcelas = 1;
-                        $primeiroPagamento = 30;
-                        break;
-                    case '5/35 dias':
-                        $totalParcelas = 2;
-                        $intervaloPagamento = 30;
-                        $primeiroPagamento = 5;
-                        break;
-                    case '30/60 dias':
-                        $totalParcelas = 2;
-                        $intervaloPagamento = 30;
-                        $primeiroPagamento = 30;
-                        break;
-                    case '5/25/45 dias':
-                        $totalParcelas = 3;
-                        $intervaloPagamento = 20;
-                        $primeiroPagamento = 5;
-                        break;
-                    case '5/25/45/65 dias':
-                        $totalParcelas = 4;
-                        $intervaloPagamento = 20;
-                        $primeiroPagamento = 5;
-                        break;
-                    case '5/35/65/95 dias':
-                        $totalParcelas = 4;
-                        $intervaloPagamento = 30;
-                        $primeiroPagamento = 5;
-                        break;
-                    default:
-                        $totalParcelas = 2;
-                        $prazoPagamento = "5/35 dias";
-                        $intervaloPagamento = 30;
-                        $primeiroPagamento = 5;
-                        break;
-                }
+                $pagamentoObject = Jestor.loadData("formas_de_pagamento", array(
+                    'where' => array(
+                        'id_formas_de_pagamento' => $orcamentoFechado['forma_de_pagamento_2']
+                        )
+                ));
+                $tempoCompensacao = intval($pagamentoObject[0]['tempo_de_compensacao']);
+                $prazoObject = Jestor.loadData("prazos_de_pagamento", array(
+                    'where' => array(
+                        'id_prazos_de_pagamento' => $orcamentoFechado['prazo_de_pagamento_2']
+                        )
+                ));
+                $intervaloPagamento = intval($prazoObject[0]['intervalo_de_pagamentos']);
+                $totalParcelas = $prazoObject[0]['total_de_parcelas'];
+                $primeiroPagamento = $prazoObject[0]['dias_ate_primeiro_pagamento'];
                 $valorParcela = $valorOrcamento / $totalParcelas;
-                
-                // If Produto de Estoque(Supreme, Mifare Branco, Protetores Faciais)
-                
                 $produtoOrcamento = $orcamentoFechado['produto'];
                 $tipoDeServico = Jestor.loadData('tipos_de_servico', array(
                     'where' => array(
@@ -131,9 +148,7 @@ if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
                     $pedObject = $pedCreated['id_pedidos'];
                     $osObject = null;
                 } else {
-
-                    // If not Produto de Estoque
-
+                    $dataFechamento = date('d-m-Y', $objectNew['data_de_fechamento']);
                     $dataInicioProducao =  date('d-m-Y', strtotime($dataFechamento. " + 5 days"));
                     $dataTerminoProducao =  date('d-m-Y', strtotime($dataFechamento. " + 25 days"));
                     $osObjects = Jestor.loadData("producao", array(
@@ -161,15 +176,48 @@ if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
                     ));
                     $orcamentoFechado['ordem_de_servico_os'] = $osCreated['id_producao'];
                     $osObject = $osCreated['id_producao'];
-                    // em produto, criar campo com tipo de produto
-                    // criar teste com orc 1 -> OS, orc 2 -> PED
                     $pedObject = null;
                 }
+                if ($pedObject != null && $osObject == null) {
+                    $description =  "Pedido: $nextPedName";
+                } else if ($osObject != null && $pedObject == null) {
+                    $description =  "Ordem de Serviço: $nextOSName";
+                } else {
+                    Jestor.error("Erro ao emitir boleto. Este contas a receber possui uma OS e um PED, o que não deveria acontecer. Exclua um dos dois, e tente novamente");    
+                }
                 foreach (range(1, $totalParcelas) as $parcela) {
-                    // create CR
+                    // Create Boleto
                     $diasAteVencimento = ($parcela - 1) * $intervaloPagamento + $primeiroPagamento;
                     $dataFechamento = date('d-m-Y', $objectNew['data_de_fechamento']);
                     $dataVencimento =  date('d-m-Y', strtotime($dataFechamento. " + $diasAteVencimento days"));
+                    $boletoURL = null;
+                    $formaPagamento = $pagamentoObject[0]['name'];
+                    if ($formaPagamento == "Boleto") {
+                        $vencimentoBoleto = date('Y-m-d', strtotime($dataFechamento. " + $diasAteVencimento days"));
+                        $cobrancaJson = Jestor.curlCall($paymentRequestURL, array( // POST - create Boleto
+                            CURLOPT_RETURNTRANSFER => 1,
+                            CURLOPT_HEADER => 0,
+                            CURLOPT_POST => 1,
+                            CURLOPT_HTTPHEADER => array(
+                                'Content-Type: application/json', 
+                                "access_token: $accessToken"),
+                            CURLOPT_POSTFIELDS => "{
+                                \"customer\": \"$asaasId\",
+                                \"billingType\": \"BOLETO\",
+                                \"dueDate\": \"$vencimentoBoleto\",
+                                \"value\": $valorParcela,
+                                \"description\": \"$description\",
+                                \"externalReference\": \"$\",
+                                \"postalService\": false
+                                }"));
+                        $cobrancaArray = json_decode($cobrancaJson, true);
+                        $boletoURL = $cobrancaArray['bankSlipUrl'];
+                        $errorMessage = $cobrancaArray['errors'][0]['description'];
+                        if ($errorMessage != null) {
+                            Jestor.error("Chamada para a API do Asaas retornou o problema: $errorMessage");
+                        }
+                    }
+                    // create CR
                     $comissaoVendedor = ($orcamentoFechado['comissao_vendedor_'] / 100) * $valorParcela;
                     $comissaoAgencia = ($orcamentoFechado['comissao_agencia_'] / 100) * $valorParcela;
                     $comissaoEspecial = ($orcamentoFechado['comissao_especial'] / 100) * $valorParcela;
@@ -178,21 +226,21 @@ if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
                     Jestor.create("contas_a_receber_cr", array(
                         'name' => "Pagamento $parcela de $totalParcelas - $orcamentoName",
                         'valor_da_receita' => $valorReceita,
-                        'contas_de_bancos' => $contaObject,
+                        'valor_original' => $valorParcela,
+                        'contas_de_bancos' => $contaObject[0],
                         'cliente' => $objectNew['cliente'],
                         'vendedor' => $objectNew['vendedor'],
                         'comissionado_especial' => $objectNew['comissionado_especial'],
                         'agencia' => $objectNew['agencia'],
+                        'prazo_de_pagamento_2' => $prazoObject[0],
                         'data_do_vencimento_original' => $dataVencimento,
                         'data_do_vencimento' => $dataVencimento,
                         'data_da_venda' => $objectNew['data_de_fechamento'],
-                        'prazo_de_pagamento' => $prazoPagamento,
                         'tipo_de_cobranca' => "Banco Simples",
-                        'forma_de_pagamento' => $formaPagamento,
+                        'forma_de_pagamento_2' => $pagamentoObject[0],
                         'numero_da_parcela' => $parcela,
                         'total_de_parcelas' => $totalParcelas,
                         'status' => "À Vencer",
-                        'valor_original' => $valorParcela,
                         'descontos' => 0,
                         'juros' => 0,
                         'imposto_retido' => $impostoRetido,
@@ -204,12 +252,15 @@ if (count($osWithVendas) == 0 && count($crWithVendas) == 0) {
                         'orcamento_relacionado' => $orcamentoFechado['id_orcamentos_de_vendas'],
                         'ordem_de_servico_os' => $osObject,
                         'pedido' => $pedObject,
-                        'fluxo_automatico' => 1
+                        'fluxo_automatico' => 1,
+                        'gerar_boleto' => 1,
+                        'gerar_nf' => 1,
+                        'url_do_boleto' => $boletoURL
                         ));
+                    }
                 }
             }
         
         }
-    }
 }
 ?>

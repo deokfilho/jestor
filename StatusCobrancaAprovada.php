@@ -2,7 +2,6 @@
 // URL:  https://michiganbrasil.jestor.com.br/development/trigger/contas_a_receber_cr/StatusCobrancaAprovada
 
 
-// check if first payment, else, every parcela will bring status back to liberado
 if ($objectNew['numero_da_parcela'] == 1) {
     if ($objectNew['fluxo_automatico'] == 1) {
         $crStatus = $objectNew['status'];
@@ -15,7 +14,7 @@ if ($objectNew['numero_da_parcela'] == 1) {
             $osStatus = $osObject[0]['status_de_producao'];
             if ($osStatus == "Aguardando") {
                 Jestor.update("producao", array(
-                    'id_producao' => $vendaVinculada,
+                    'id_producao' => $osVinculada,
                     'status_de_producao' => "Liberado"
                 ));
             }
@@ -24,6 +23,7 @@ if ($objectNew['numero_da_parcela'] == 1) {
 }
 
 // EDGE CASES
+// What about when there is no OS, only PED
 
 // FIXED
 // if pago by mistake(message showing automation should inform user that OS was updated automatically)
